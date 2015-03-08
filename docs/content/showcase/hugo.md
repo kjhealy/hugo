@@ -1,12 +1,14 @@
-+++
-title = "Hugo Documentation"
-date = 2013-07-01T07:32:00Z 
-description = "This site"
-license = "Simpl"
-licenseLink = ""
-sourceLink = "http://github.com/spf13/hugo/docs"
-sitelink = "http://hugo.spf13.com"
-thumbnail = "/static/img/hugo-tn.jpg"
-tags = ["documentation", "bootstrap"]
-+++
+---
+date: 2013-07-01T07:32:00Z
+description: This site
+license: Simpl
+licenseLink: ""
+sitelink: http://gohugo.io/
+sourceLink: https://github.com/spf13/hugo/tree/master/docs
+tags:
+- documentation
+- bootstrap
+thumbnail: /img/hugo-tn.jpg
+title: Hugo
+---
 

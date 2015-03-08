@@ -21,13 +21,13 @@ import (
  * Implementation of a custom sorter for Pages
  */
 
-// A type to implement the sort interface for Pages
+// A PageSorter implements the sort interface for Pages
 type PageSorter struct {
 	pages Pages
 	by    PageBy
 }
 
-// Closure used in the Sort.Less method.
+// PageBy is a closure used in the Sort.Less method.
 type PageBy func(p1, p2 *Page) bool
 
 func (by PageBy) Sort(pages Pages) {
@@ -35,15 +35,14 @@ func (by PageBy) Sort(pages Pages) {
 		pages: pages,
 		by:    by, // The Sort method's receiver is the function (closure) that defines the sort order.
 	}
-	sort.Sort(ps)
+	sort.Stable(ps)
 }
 
 var DefaultPageSort = func(p1, p2 *Page) bool {
 	if p1.Weight == p2.Weight {
 		return p1.Date.Unix() > p2.Date.Unix()
-	} else {
-		return p1.Weight < p2.Weight
 	}
+	return p1.Weight < p2.Weight
 }
 
 func (ps *PageSorter) Len() int      { return len(ps.pages) }
@@ -59,13 +58,30 @@ func (p Pages) Sort() {
 func (p Pages) Limit(n int) Pages {
 	if len(p) < n {
 		return p[0:n]
-	} else {
-		return p
 	}
+	return p
 }
 
 func (p Pages) ByWeight() Pages {
 	PageBy(DefaultPageSort).Sort(p)
+	return p
+}
+
+func (p Pages) ByTitle() Pages {
+	title := func(p1, p2 *Page) bool {
+		return p1.Title < p2.Title
+	}
+
+	PageBy(title).Sort(p)
+	return p
+}
+
+func (p Pages) ByLinkTitle() Pages {
+	linkTitle := func(p1, p2 *Page) bool {
+		return p1.linkTitle < p2.linkTitle
+	}
+
+	PageBy(linkTitle).Sort(p)
 	return p
 }
 
@@ -75,6 +91,15 @@ func (p Pages) ByDate() Pages {
 	}
 
 	PageBy(date).Sort(p)
+	return p
+}
+
+func (p Pages) ByPublishDate() Pages {
+	pubDate := func(p1, p2 *Page) bool {
+		return p1.PublishDate.Unix() < p2.PublishDate.Unix()
+	}
+
+	PageBy(pubDate).Sort(p)
 	return p
 }
 

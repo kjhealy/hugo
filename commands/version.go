@@ -15,14 +15,61 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/kardianos/osext"
 	"github.com/spf13/cobra"
+	"github.com/spf13/hugo/hugolib"
 )
+
+var timeLayout string // the layout for time.Time
 
 var version = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version number of Hugo",
 	Long:  `All software has versions. This is Hugo's`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Hugo Static Site Generator v0.9")
+		if hugolib.BuildDate == "" {
+			setBuildDate() // set the build date from executable's mdate
+		} else {
+			formatBuildDate() // format the compile time
+		}
+		if hugolib.CommitHash == "" {
+			fmt.Printf("Hugo Static Site Generator v%s BuildDate: %s\n", hugolib.Version, hugolib.BuildDate)
+		} else {
+			fmt.Printf("Hugo Static Site Generator v%s-%s BuildDate: %s\n", hugolib.Version, strings.ToUpper(hugolib.CommitHash), hugolib.BuildDate)
+		}
 	},
+}
+
+// setBuildDate checks the ModTime of the Hugo executable and returns it as a
+// formatted string.  This assumes that the executable name is Hugo, if it does
+// not exist, an empty string will be returned.  This is only called if the
+// hugolib.BuildDate wasn't set during compile time.
+//
+// osext is used for cross-platform.
+func setBuildDate() {
+	fname, _ := osext.Executable()
+	dir, err := filepath.Abs(filepath.Dir(fname))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fi, err := os.Lstat(filepath.Join(dir, filepath.Base(fname)))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	t := fi.ModTime()
+	hugolib.BuildDate = t.Format(time.RFC3339)
+}
+
+// formatBuildDate formats the hugolib.BuildDate according to the value in
+// .Params.DateFormat, if it's set.
+func formatBuildDate() {
+	t, _ := time.Parse("2006-01-02T15:04:05-0700", hugolib.BuildDate)
+	hugolib.BuildDate = t.Format(time.RFC3339)
 }

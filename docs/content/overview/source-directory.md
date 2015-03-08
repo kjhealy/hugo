@@ -1,22 +1,50 @@
 ---
-title: "Source Directory Organization"
-date: "2013-07-01"
-aliases: ["/doc/source-directory/"]
-groups: ['gettingStarted']
-groups_weight: 50
+aliases:
+- /doc/source-directory/
+date: 2013-07-01
+menu:
+  main:
+    parent: getting started
+next: /content/organization
 notoc: true
+prev: /overview/configuration
+title: Source Organization
+weight: 50
 ---
 
-Hugo takes a single directory and uses it as the input for creating a complete website.
+Hugo takes a single directory and uses it as the input for creating a complete
+website.
 
-Hugo has a very small amount of configuration, while remaining highly customizable. 
-It accomplishes by assuming that you will only provide templates with the intent of
-using them.
+
+The top level of a source directory will typically have the following elements:
+
+    ▸ archetypes/
+    ▸ content/
+    ▸ data/
+    ▸ layouts/
+    ▸ static/
+    ▸ themes/
+      config.toml
+
+Learn more about the different directories and what their purpose is:
+
+* [config](/overview/configuration/)
+* [data](/extras/datafiles/)
+* [archetypes](/content/archetypes/)
+* [content](/content/organization/)
+* [layouts](/layout/overview/)
+* [static](/themes/creation#toc_4)
+* [themes](/themes/overview/)
+
+
+## Example
 
 An example directory may look like:
 
     .
-    ├── config.yaml
+    ├── config.toml
+    ├── archetypes
+    |   └── default.md
     ├── content
     |   ├── post
     |   |   ├── firstpost.md
@@ -24,11 +52,15 @@ An example directory may look like:
     |   └── quote
     |   |   ├── first.md
     |   |   └── second.md
+    ├── data
     ├── layouts
-    |   ├── chrome
+    |   ├── _default
+    |   |   ├── single.html
+    |   |   └── list.html
+    |   ├── partials
     |   |   ├── header.html
     |   |   └── footer.html
-    |   ├── indexes
+    |   ├── taxonomies
     |   |   ├── category.html
     |   |   ├── post.html
     |   |   ├── quote.html
@@ -46,13 +78,16 @@ An example directory may look like:
     |   |   ├── vimeo.html
     |   |   └── youtube.html
     |   ├── index.html
-    |   └── rss.xml
+    |   └── sitemap.xml
+    ├── themes
+    |   ├── hyde
+    |   └── doc
     └── static
+        ├── css
+        └── js
 
 This directory structure tells us a lot about this site:
 
-1. the website intends to have two different types of content, posts and quotes.
-2. It will also apply two different indexes to that content, categories and tags.
-3. It will be displaying content in 3 different views, a list, a summary and a full page view.
-
-Included with the repository is this example site ready to be rendered.
+1. The website intends to have two different types of content: *posts* and *quotes*.
+2. It will also apply two different taxonomies to that content: *categories* and *tags*.
+3. It will be displaying content in 3 different views: a list, a summary and a full page view.

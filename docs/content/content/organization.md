@@ -1,21 +1,28 @@
 ---
-title: "Content Organization"
-date: "2013-07-01"
-aliases: ["/doc/organization/"]
-linktitle: "Organization"
-groups: ['content']
-groups_weight: 10
+aliases:
+- /doc/organization/
+date: 2013-07-01
+linktitle: Organization
+menu:
+  main:
+    parent: content
+next: /content/front-matter
+prev: /overview/source-directory
+title: Content Organization
+weight: 10
 ---
 
-Hugo uses markdown files with headers commonly called the front matter. Hugo respects the organization
-that you provide for your content to minimize any extra configuration, though this can be overridden
-by additional configuration in the front matter.
+Hugo uses Markdown files with headers commonly called the *front matter*. Hugo
+respects the organization that you provide for your content to minimize any
+extra configuration, though this can be overridden by additional configuration
+in the front matter.
 
 ## Organization
-In Hugo the content should be arranged in the same way they are intended for the rendered website.
-Without any additional configuration the following will just work. Hugo supports
-content nested at any level. The top level is special in Hugo and is used as the
-[section](/content/sections).
+
+In Hugo, the content should be arranged in the same way they are intended for
+the rendered website. Without any additional configuration, the following will
+just work. Hugo supports content nested at any level. The top level is special
+in Hugo and is used as the [section](/content/sections/).
 
     .
     └── content
@@ -28,7 +35,7 @@ content nested at any level. The top level is special in Hugo and is used as the
             ├── first.md       // <- http://1.com/quote/first/
             └── second.md      // <- http://1.com/quote/second/
 
-**Here's the same organization run with hugo -\-uglyurls**
+**Here's the same organization run with `hugo --uglyUrls`**
 
     .
     └── content
@@ -43,14 +50,14 @@ content nested at any level. The top level is special in Hugo and is used as the
 
 ## Destinations
 
-Hugo thinks that you organize your content with a purpose. The same structure
+Hugo believes that you organize your content with a purpose. The same structure
 that works to organize your source content is used to organize the rendered
 site. As displayed above, the organization of the source content will be
 mirrored in the destination.
 
 There are times when one would need more control over their content. In these
-cases there are a variety of things that can be specified in the front matter to
-determine the destination of a specific piece of content.
+cases, there are a variety of things that can be specified in the front matter
+to determine the destination of a specific piece of content.
 
 The following items are defined in order, latter items in the list will override
 earlier settings.
@@ -65,25 +72,25 @@ destination.
 
 ### filepath
 The actual path to the file on disk. Destination will create the destination
-with the same path. Includes [section](/content/sections).
+with the same path. Includes [section](/content/sections/).
 
 ### section
 section can be provided in the front matter overriding the section derived from
-the source content location on disk. See [section](/content/sections).
+the source content location on disk. See [section](/content/sections/).
 
 ### path
 path can be provided in the front matter. This will replace the actual
 path to the file on disk. Destination will create the destination with the same
-path. Includes [section](/content/sections).
+path. Includes [section](/content/sections/).
 
 ### url
-A complete url can be provided. This will override all the above as it pertains
+A complete URL can be provided. This will override all the above as it pertains
 to the end destination. This must be the path from the baseurl (starting with a "/").
-When a url is provided it will be used exactly. Using url will ignore the
--\-uglyurls setting.
+When a url is provided, it will be used exactly. Using url will ignore the
+`--uglyUrls` setting.
 
 
-## Path breakdown in hugo
+## Path breakdown in Hugo
 
 ### Content
 
@@ -145,12 +152,12 @@ When a url is provided it will be used exactly. Using url will ignore the
 * based on content-name.md 
 * front matter overrides
 
-**path** = section + path to file exluding slug
+**path** = section + path to file excluding slug
 
 * based on path to content location
 
 
-**url** = relative url
+**url** = relative URL
 
 * defined in front matter
 * overrides all the above

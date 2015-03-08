@@ -3,14 +3,15 @@ package hugolib
 import (
 	"bytes"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 const SITE_INFO_PARAM_TEMPLATE = `{{ .Site.Params.MyGlobalParam }}`
 
 func TestSiteInfoParams(t *testing.T) {
-	s := &Site{
-		Config: Config{Params: map[string]interface{}{"MyGlobalParam": "FOOBAR_PARAM"}},
-	}
+	viper.Set("Params", map[string]interface{}{"MyGlobalParam": "FOOBAR_PARAM"})
+	s := &Site{}
 
 	s.initialize()
 	if s.Info.Params["MyGlobalParam"] != "FOOBAR_PARAM" {
@@ -27,5 +28,17 @@ func TestSiteInfoParams(t *testing.T) {
 
 	if buf.String() != "FOOBAR_PARAM" {
 		t.Errorf("Expected FOOBAR_PARAM: got %s", buf.String())
+	}
+}
+
+func TestSiteInfoPermalinks(t *testing.T) {
+	viper.Set("Permalinks", map[string]interface{}{"section": "/:title"})
+	s := &Site{}
+
+	s.initialize()
+	permalink := s.Info.Permalinks["section"]
+
+	if permalink != "/:title" {
+		t.Errorf("Could not set permalink (%#v)", permalink)
 	}
 }

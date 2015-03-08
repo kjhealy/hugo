@@ -1,46 +1,91 @@
 ---
-title: "Example Content File"
-date: "2013-07-01"
-aliases: ["/doc/example/"]
-linktitle: "Example"
-groups: ['content']
-groups_weight: 50
+aliases:
+- /doc/example/
+date: 2013-07-01
+linktitle: Example
+menu:
+  main:
+    parent: content
+next: /themes/overview
 notoc: true
+prev: /content/summaries
+title: Example Content File
+weight: 70
 ---
 
-Somethings are better shown than explained. The following is a very basic example of a content file:
+Some things are better shown than explained. The following is a very basic example of a content file written in [Markdown](https://help.github.com/articles/github-flavored-markdown/):
 
-**mysite/project/nitro.md  <- http://mysite.com/project/nitro.html**
+**mysite/content/project/nitro.md → http://mysite.com/project/nitro.html**
 
-{{% highlight yaml %}}
----
-Title:       "Nitro : A quick and simple profiler for golang"
-Description: "Nitro is a simple profiler for you go lang applications"
-Tags:        [ "Development", "golang", "profiling" ]
-date:        "2013-06-19"
-Topics:      [ "Development", "GoLang" ]
-Slug:        "nitro"
-project_url: "http://github.com/spf13/nitro"
----
+With TOML front matter:
+
+```markdown
++++
+date        = "2013-06-21T11:27:27-04:00"
+title       = "Nitro: A quick and simple profiler for Go"
+description = "Nitro is a simple profiler for your Golang applications"
+tags        = [ "Development", "Go", "profiling" ]
+topics      = [ "Development", "Go" ]
+slug        = "nitro"
+project_url = "https://github.com/spf13/nitro"
++++
 
 # Nitro
 
-Quick and easy performance analyzer library for golang.
+Quick and easy performance analyzer library for [Go](http://golang.org/).
 
 ## Overview
 
-Nitro is a quick and easy performance analyzer library for golang.
+Nitro is a quick and easy performance analyzer library for Go.
 It is useful for comparing A/B against different drafts of functions
 or different functions.
 
 ## Implementing Nitro
 
-Using Nitro is simple. First use go get to install the latest version
+Using Nitro is simple. First, use `go get` to install the latest version
 of the library.
 
     $ go get github.com/spf13/nitro
 
-Next include nitro in your application.
+Next, include nitro in your application.
+```
 
-{{% /highlight %}}
+You may also use the equivalent YAML front matter:
 
+```markdown
+---
+date:        "2013-06-21T11:27:27-04:00"
+title:       "Nitro: A quick and simple profiler for Go"
+description: "Nitro is a simple profiler for your Go lang applications"
+tags:        [ "Development", "Go", "profiling" ]
+topics:      [ "Development", "Go" ]
+slug:        "nitro"
+project_url: "https://github.com/spf13/nitro"
+---
+```
+
+`nitro.md` would be rendered as follows:
+
+> # Nitro
+>
+> Quick and easy performance analyzer library for [Go](http://golang.org/).
+>
+> ## Overview
+>
+> Nitro is a quick and easy performance analyzer library for Go.
+> It is useful for comparing A/B against different drafts of functions
+> or different functions.
+>
+> ## Implementing Nitro
+>
+> Using Nitro is simple. First, use `go get` to install the latest version
+> of the library.
+>
+>     $ go get github.com/spf13/nitro
+>
+> Next, include nitro in your application.
+
+The source `nitro.md` file is converted to HTML by the excellent
+[Blackfriday](https://github.com/russross/blackfriday) Markdown processor,
+which supports extended features found in the popular
+[GitHub Flavored Markdown](https://help.github.com/articles/github-flavored-markdown/).

@@ -11,91 +11,242 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//Package commands defines and implements command-line commands and flags used by Hugo. Commands and flags are implemented using
+//cobra.
 package commands
 
 import (
 	"fmt"
-	"github.com/mostafah/fsync"
-	"github.com/spf13/cobra"
-	"github.com/spf13/hugo/hugolib"
-	"github.com/spf13/hugo/utils"
-	"github.com/spf13/hugo/watcher"
-	"github.com/spf13/nitro"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/fsync"
+	"github.com/spf13/hugo/helpers"
+	"github.com/spf13/hugo/hugofs"
+	"github.com/spf13/hugo/hugolib"
+	"github.com/spf13/hugo/livereload"
+	"github.com/spf13/hugo/utils"
+	"github.com/spf13/hugo/watcher"
+	jww "github.com/spf13/jwalterweatherman"
+	"github.com/spf13/nitro"
+	"github.com/spf13/viper"
 )
 
-var Config *hugolib.Config
+//HugoCmd is Hugo's root command. Every other command attached to HugoCmd is a child command to it.
 var HugoCmd = &cobra.Command{
 	Use:   "hugo",
 	Short: "Hugo is a very fast static site generator",
 	Long: `A Fast and Flexible Static Site Generator built with
 love by spf13 and friends in Go.
 
-Complete documentation is available at http://hugo.spf13.com`,
+Complete documentation is available at http://gohugo.io`,
 	Run: func(cmd *cobra.Command, args []string) {
 		InitializeConfig()
 		build()
 	},
 }
+
 var hugoCmdV *cobra.Command
 
-var BuildWatch, Draft, UglyUrls, Verbose bool
-var Source, Destination, BaseUrl, CfgFile string
+//Flags that are to be added to commands.
+var BuildWatch, IgnoreCache, Draft, Future, UglyUrls, Verbose, Logging, VerboseLog, DisableRSS, DisableSitemap, PluralizeListTitles, NoTimes bool
+var Source, CacheDir, Destination, Theme, BaseUrl, CfgFile, LogFile, Editor string
 
+//Execute adds all child commands to the root command HugoCmd and sets flags appropriately.
 func Execute() {
 	AddCommands()
 	utils.StopOnErr(HugoCmd.Execute())
 }
 
+//AddCommands adds child commands to the root command HugoCmd.
 func AddCommands() {
 	HugoCmd.AddCommand(serverCmd)
 	HugoCmd.AddCommand(version)
+	HugoCmd.AddCommand(config)
 	HugoCmd.AddCommand(check)
 	HugoCmd.AddCommand(benchmark)
+	HugoCmd.AddCommand(convertCmd)
+	HugoCmd.AddCommand(newCmd)
+	HugoCmd.AddCommand(listCmd)
 }
 
+//Initializes flags
 func init() {
-	HugoCmd.PersistentFlags().BoolVarP(&Draft, "build-drafts", "D", false, "include content marked as draft")
+	HugoCmd.PersistentFlags().BoolVarP(&Draft, "buildDrafts", "D", false, "include content marked as draft")
+	HugoCmd.PersistentFlags().BoolVarP(&Future, "buildFuture", "F", false, "include content with datePublished in the future")
+	HugoCmd.PersistentFlags().BoolVar(&DisableRSS, "disableRSS", false, "Do not build RSS files")
+	HugoCmd.PersistentFlags().BoolVar(&DisableSitemap, "disableSitemap", false, "Do not build Sitemap file")
 	HugoCmd.PersistentFlags().StringVarP(&Source, "source", "s", "", "filesystem path to read files relative from")
+	HugoCmd.PersistentFlags().StringVarP(&CacheDir, "cacheDir", "", "", "filesystem path to cache directory. Defaults: $TMPDIR/hugo_cache/")
+	HugoCmd.PersistentFlags().BoolVarP(&IgnoreCache, "ignoreCache", "", false, "Ignores the cache directory for reading but still writes to it")
 	HugoCmd.PersistentFlags().StringVarP(&Destination, "destination", "d", "", "filesystem path to write files to")
+	HugoCmd.PersistentFlags().StringVarP(&Theme, "theme", "t", "", "theme to use (located in /themes/THEMENAME/)")
 	HugoCmd.PersistentFlags().BoolVarP(&Verbose, "verbose", "v", false, "verbose output")
-	HugoCmd.PersistentFlags().BoolVar(&UglyUrls, "uglyurls", false, "if true, use /filename.html instead of /filename/")
-	HugoCmd.PersistentFlags().StringVarP(&BaseUrl, "base-url", "b", "", "hostname (and path) to the root eg. http://spf13.com/")
+	HugoCmd.PersistentFlags().BoolVar(&UglyUrls, "uglyUrls", false, "if true, use /filename.html instead of /filename/")
+	HugoCmd.PersistentFlags().StringVarP(&BaseUrl, "baseUrl", "b", "", "hostname (and path) to the root eg. http://spf13.com/")
 	HugoCmd.PersistentFlags().StringVar(&CfgFile, "config", "", "config file (default is path/config.yaml|json|toml)")
+	HugoCmd.PersistentFlags().StringVar(&Editor, "editor", "", "edit new content with this editor, if provided")
+	HugoCmd.PersistentFlags().BoolVar(&Logging, "log", false, "Enable Logging")
+	HugoCmd.PersistentFlags().StringVar(&LogFile, "logFile", "", "Log File path (if set, logging enabled automatically)")
+	HugoCmd.PersistentFlags().BoolVar(&VerboseLog, "verboseLog", false, "verbose logging")
 	HugoCmd.PersistentFlags().BoolVar(&nitro.AnalysisOn, "stepAnalysis", false, "display memory and timing of different steps of the program")
+	HugoCmd.PersistentFlags().BoolVar(&PluralizeListTitles, "pluralizeListTitles", true, "Pluralize titles in lists using inflect")
 	HugoCmd.Flags().BoolVarP(&BuildWatch, "watch", "w", false, "watch filesystem for changes and recreate as needed")
+	HugoCmd.Flags().BoolVarP(&NoTimes, "noTimes", "", false, "Don't sync modification time of files")
 	hugoCmdV = HugoCmd
 }
 
+// InitializeConfig initializes a config file with sensible default configuration flags.
 func InitializeConfig() {
-	Config = hugolib.SetupConfig(&CfgFile, &Source)
-
-	if hugoCmdV.PersistentFlags().Lookup("build-drafts").Changed {
-		Config.BuildDrafts = Draft
+	viper.SetConfigFile(CfgFile)
+	viper.AddConfigPath(Source)
+	err := viper.ReadInConfig()
+	if err != nil {
+		jww.ERROR.Println("Unable to locate Config file. Perhaps you need to create a new site. Run `hugo help new` for details")
 	}
 
-	if hugoCmdV.PersistentFlags().Lookup("uglyurls").Changed {
-		Config.UglyUrls = UglyUrls
+	viper.RegisterAlias("indexes", "taxonomies")
+
+	viper.SetDefault("Watch", false)
+	viper.SetDefault("MetaDataFormat", "toml")
+	viper.SetDefault("DisableRSS", false)
+	viper.SetDefault("DisableSitemap", false)
+	viper.SetDefault("ContentDir", "content")
+	viper.SetDefault("LayoutDir", "layouts")
+	viper.SetDefault("StaticDir", "static")
+	viper.SetDefault("ArchetypeDir", "archetypes")
+	viper.SetDefault("PublishDir", "public")
+	viper.SetDefault("DataDir", "data")
+	viper.SetDefault("DefaultLayout", "post")
+	viper.SetDefault("BuildDrafts", false)
+	viper.SetDefault("BuildFuture", false)
+	viper.SetDefault("UglyUrls", false)
+	viper.SetDefault("Verbose", false)
+	viper.SetDefault("IgnoreCache", false)
+	viper.SetDefault("CanonifyUrls", false)
+	viper.SetDefault("Taxonomies", map[string]string{"tag": "tags", "category": "categories"})
+	viper.SetDefault("Permalinks", make(hugolib.PermalinkOverrides, 0))
+	viper.SetDefault("Sitemap", hugolib.Sitemap{Priority: -1})
+	viper.SetDefault("PygmentsStyle", "monokai")
+	viper.SetDefault("DefaultExtension", "html")
+	viper.SetDefault("PygmentsUseClasses", false)
+	viper.SetDefault("DisableLiveReload", false)
+	viper.SetDefault("PluralizeListTitles", true)
+	viper.SetDefault("FootnoteAnchorPrefix", "")
+	viper.SetDefault("FootnoteReturnLinkContents", "")
+	viper.SetDefault("NewContentEditor", "")
+	viper.SetDefault("Paginate", 10)
+	viper.SetDefault("PaginatePath", "page")
+	viper.SetDefault("Blackfriday", helpers.NewBlackfriday())
+
+	if hugoCmdV.PersistentFlags().Lookup("buildDrafts").Changed {
+		viper.Set("BuildDrafts", Draft)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("buildFuture").Changed {
+		viper.Set("BuildFuture", Future)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("uglyUrls").Changed {
+		viper.Set("UglyUrls", UglyUrls)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("disableRSS").Changed {
+		viper.Set("DisableRSS", DisableRSS)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("disableSitemap").Changed {
+		viper.Set("DisableSitemap", DisableSitemap)
 	}
 
 	if hugoCmdV.PersistentFlags().Lookup("verbose").Changed {
-		Config.Verbose = Verbose
+		viper.Set("Verbose", Verbose)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("pluralizeListTitles").Changed {
+		viper.Set("PluralizeListTitles", PluralizeListTitles)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("editor").Changed {
+		viper.Set("NewContentEditor", Editor)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("logFile").Changed {
+		viper.Set("LogFile", LogFile)
 	}
 	if BaseUrl != "" {
-		Config.BaseUrl = BaseUrl
+		if !strings.HasSuffix(BaseUrl, "/") {
+			BaseUrl = BaseUrl + "/"
+		}
+		viper.Set("BaseUrl", BaseUrl)
 	}
+
+	if viper.GetString("BaseUrl") == "" {
+		jww.ERROR.Println("No 'baseurl' set in configuration or as a flag. Features like page menus will not work without one.")
+	}
+
+	if Theme != "" {
+		viper.Set("theme", Theme)
+	}
+
 	if Destination != "" {
-		Config.PublishDir = Destination
+		viper.Set("PublishDir", Destination)
 	}
+
+	if Source != "" {
+		viper.Set("WorkingDir", Source)
+	} else {
+		dir, _ := os.Getwd()
+		viper.Set("WorkingDir", dir)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("ignoreCache").Changed {
+		viper.Set("IgnoreCache", IgnoreCache)
+	}
+
+	if CacheDir != "" {
+		if helpers.FilePathSeparator != CacheDir[len(CacheDir)-1:] {
+			CacheDir = CacheDir + helpers.FilePathSeparator
+		}
+		isDir, err := helpers.DirExists(CacheDir, hugofs.SourceFs)
+		utils.CheckErr(err)
+		if isDir == false {
+			mkdir(CacheDir)
+		}
+		viper.Set("CacheDir", CacheDir)
+	} else {
+		viper.Set("CacheDir", helpers.GetTempDir("hugo_cache", hugofs.SourceFs))
+	}
+
+	if VerboseLog || Logging || (viper.IsSet("LogFile") && viper.GetString("LogFile") != "") {
+		if viper.IsSet("LogFile") && viper.GetString("LogFile") != "" {
+			jww.SetLogFile(viper.GetString("LogFile"))
+		} else {
+			jww.UseTempLogFile("hugo")
+		}
+	} else {
+		jww.DiscardLogging()
+	}
+
+	if viper.GetBool("verbose") {
+		jww.SetStdoutThreshold(jww.LevelInfo)
+	}
+
+	if VerboseLog {
+		jww.SetLogThreshold(jww.LevelInfo)
+	}
+
+	jww.INFO.Println("Using config file:", viper.ConfigFileUsed())
 }
 
 func build(watches ...bool) {
-	utils.CheckErr(copyStatic(), fmt.Sprintf("Error copying static files to %s", Config.GetAbsPath(Config.PublishDir)))
+	utils.CheckErr(copyStatic(), fmt.Sprintf("Error copying static files to %s", helpers.AbsPathify(viper.GetString("PublishDir"))))
 	watch := false
 	if len(watches) > 0 && watches[0] {
 		watch = true
@@ -103,27 +254,65 @@ func build(watches ...bool) {
 	utils.StopOnErr(buildSite(BuildWatch || watch))
 
 	if BuildWatch {
-		fmt.Println("Watching for changes in", Config.GetAbsPath(Config.ContentDir))
-		fmt.Println("Press ctrl+c to stop")
+		jww.FEEDBACK.Println("Watching for changes in", helpers.AbsPathify(viper.GetString("ContentDir")))
+		jww.FEEDBACK.Println("Press Ctrl+C to stop")
 		utils.CheckErr(NewWatcher(0))
 	}
 }
 
 func copyStatic() error {
-	staticDir := Config.GetAbsPath(Config.StaticDir + "/")
+	staticDir := helpers.AbsPathify(viper.GetString("StaticDir")) + "/"
 	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
+		jww.ERROR.Println("Unable to find Static Directory:", staticDir)
 		return nil
 	}
 
+	publishDir := helpers.AbsPathify(viper.GetString("PublishDir")) + "/"
+
+	syncer := fsync.NewSyncer()
+	syncer.NoTimes = viper.GetBool("notimes")
+	syncer.SrcFs = hugofs.SourceFs
+	syncer.DestFs = hugofs.DestinationFS
+
+	themeDir, err := helpers.GetThemeStaticDirPath()
+	if err != nil {
+		jww.ERROR.Println(err)
+		return nil
+	}
+
+	if themeDir != "" {
+		// Copy Static to Destination
+		jww.INFO.Println("syncing from", themeDir, "to", publishDir)
+		utils.CheckErr(syncer.Sync(publishDir, themeDir), fmt.Sprintf("Error copying static files of theme to %s", publishDir))
+	}
+
 	// Copy Static to Destination
-	return fsync.Sync(Config.GetAbsPath(Config.PublishDir+"/"), Config.GetAbsPath(Config.StaticDir+"/"))
+	jww.INFO.Println("syncing from", staticDir, "to", publishDir)
+	return syncer.Sync(publishDir, staticDir)
 }
 
 func getDirList() []string {
 	var a []string
 	walker := func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
-			fmt.Println("Walker: ", err)
+			jww.ERROR.Println("Walker: ", err)
+			return nil
+		}
+
+		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
+			link, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				jww.ERROR.Printf("Cannot read symbolic link '%s', error was: %s", path, err)
+				return nil
+			}
+			linkfi, err := os.Stat(link)
+			if err != nil {
+				jww.ERROR.Printf("Cannot stat '%s', error was: %s", link, err)
+				return nil
+			}
+			if !linkfi.Mode().IsRegular() {
+				jww.ERROR.Printf("Symbolic links for directories not supported, skipping '%s'", path)
+			}
 			return nil
 		}
 
@@ -133,28 +322,34 @@ func getDirList() []string {
 		return nil
 	}
 
-	filepath.Walk(Config.GetAbsPath(Config.ContentDir), walker)
-	filepath.Walk(Config.GetAbsPath(Config.LayoutDir), walker)
-	filepath.Walk(Config.GetAbsPath(Config.StaticDir), walker)
+	filepath.Walk(helpers.AbsPathify(viper.GetString("DataDir")), walker)
+	filepath.Walk(helpers.AbsPathify(viper.GetString("ContentDir")), walker)
+	filepath.Walk(helpers.AbsPathify(viper.GetString("LayoutDir")), walker)
+	filepath.Walk(helpers.AbsPathify(viper.GetString("StaticDir")), walker)
+	if helpers.ThemeSet() {
+		filepath.Walk(helpers.AbsPathify("themes/"+viper.GetString("theme")), walker)
+	}
 
 	return a
 }
 
 func buildSite(watching ...bool) (err error) {
 	startTime := time.Now()
-	site := &hugolib.Site{Config: *Config}
+	site := &hugolib.Site{}
 	if len(watching) > 0 && watching[0] {
 		site.RunMode.Watching = true
 	}
 	err = site.Build()
 	if err != nil {
-		return
+		return err
 	}
 	site.Stats()
-	fmt.Printf("in %v ms\n", int(1000*time.Since(startTime).Seconds()))
+	jww.FEEDBACK.Printf("in %v ms\n", int(1000*time.Since(startTime).Seconds()))
+
 	return nil
 }
 
+//NewWatcher creates a new watcher to watch filesystem events.
 func NewWatcher(port int) error {
 	if runtime.GOOS == "darwin" {
 		tweakLimit()
@@ -182,16 +377,15 @@ func NewWatcher(port int) error {
 		for {
 			select {
 			case evs := <-watcher.Event:
-				if Verbose {
-					fmt.Println(evs)
-				}
+				jww.INFO.Println("File System Event:", evs)
 
-				static_changed := false
-				dynamic_changed := false
+				staticChanged := false
+				dynamicChanged := false
+				staticFilesChanged := make(map[string]bool)
 
 				for _, ev := range evs {
 					ext := filepath.Ext(ev.Name)
-					istemp := strings.HasSuffix(ext, "~") || (ext == ".swp") || (ext == ".tmp")
+					istemp := strings.HasSuffix(ext, "~") || (ext == ".swp") || (ext == ".swx") || (ext == ".tmp") || (strings.HasPrefix(ext, ".goutputstream"))
 					if istemp {
 						continue
 					}
@@ -200,9 +394,15 @@ func NewWatcher(port int) error {
 						continue
 					}
 
-					isstatic := strings.HasPrefix(ev.Name, Config.GetAbsPath(Config.StaticDir))
-					static_changed = static_changed || isstatic
-					dynamic_changed = dynamic_changed || !isstatic
+					isstatic := strings.HasPrefix(ev.Name, helpers.GetStaticDirPath()) || strings.HasPrefix(ev.Name, helpers.GetThemesDirPath())
+					staticChanged = staticChanged || isstatic
+					dynamicChanged = dynamicChanged || !isstatic
+
+					if isstatic {
+						if staticPath, err := helpers.MakeStaticPathRelative(ev.Name); err == nil {
+							staticFilesChanged[staticPath] = true
+						}
+					}
 
 					// add new directory to watch list
 					if s, err := os.Stat(ev.Name); err == nil && s.Mode().IsDir() {
@@ -212,14 +412,35 @@ func NewWatcher(port int) error {
 					}
 				}
 
-				if static_changed {
-					fmt.Println("Static file changed, syncing\n")
-					utils.CheckErr(copyStatic(), fmt.Sprintf("Error copying static files to %s", Config.GetAbsPath(Config.PublishDir)))
+				if staticChanged {
+					jww.FEEDBACK.Println("Static file changed, syncing\n")
+					utils.StopOnErr(copyStatic(), fmt.Sprintf("Error copying static files to %s", helpers.AbsPathify(viper.GetString("PublishDir"))))
+
+					if !BuildWatch && !viper.GetBool("DisableLiveReload") {
+						// Will block forever trying to write to a channel that nobody is reading if livereload isn't initalized
+
+						// force refresh when more than one file
+						if len(staticFilesChanged) == 1 {
+							for path := range staticFilesChanged {
+								livereload.RefreshPath(path)
+							}
+
+						} else {
+							livereload.ForceRefresh()
+						}
+					}
 				}
 
-				if dynamic_changed {
-					fmt.Println("Change detected, rebuilding site\n")
-					utils.StopOnErr(buildSite(true))
+				if dynamicChanged {
+					fmt.Print("\nChange detected, rebuilding site\n")
+					const layout = "2006-01-02 15:04 -0700"
+					fmt.Println(time.Now().Format(layout))
+					utils.CheckErr(buildSite(true))
+
+					if !BuildWatch && !viper.GetBool("DisableLiveReload") {
+						// Will block forever trying to write to a channel that nobody is reading if livereload isn't initalized
+						livereload.ForceRefresh()
+					}
 				}
 			case err := <-watcher.Error:
 				if err != nil {
@@ -230,6 +451,12 @@ func NewWatcher(port int) error {
 	}()
 
 	if port > 0 {
+		if !viper.GetBool("DisableLiveReload") {
+			livereload.Initialize()
+			http.HandleFunc("/livereload.js", livereload.ServeJS)
+			http.HandleFunc("/livereload", livereload.Handler)
+		}
+
 		go serve(port)
 	}
 

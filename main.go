@@ -1,4 +1,4 @@
-// Copyright © 2013 Steve Francia <spf@spf13.com>.
+// Copyright © 2013-14 Steve Francia <spf@spf13.com>.
 //
 // Licensed under the Simple Public License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,9 +14,12 @@
 package main
 
 import (
+	"runtime"
+
 	"github.com/spf13/hugo/commands"
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	commands.Execute()
 }
