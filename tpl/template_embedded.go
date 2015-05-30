@@ -21,7 +21,7 @@ type Tmpl struct {
 func (t *GoHTMLTemplate) EmbedShortcodes() {
 	t.AddInternalShortcode("ref.html", `{{ .Get 0 | ref .Page }}`)
 	t.AddInternalShortcode("relref.html", `{{ .Get 0 | relref .Page }}`)
-	t.AddInternalShortcode("highlight.html", `{{ .Get 0 | highlight .Inner  }}`)
+	t.AddInternalShortcode("highlight.html", `{{ if len .Params | eq 2 }}{{ highlight .Inner (.Get 0) (.Get 1) }}{{ else }}{{ highlight .Inner (.Get 0) "" }}{{ end }}`)
 	t.AddInternalShortcode("test.html", `This is a simple Test`)
 	t.AddInternalShortcode("figure.html", `<!-- image -->
 <figure {{ with .Get "class" }}class="{{.}}"{{ end }}>
@@ -73,8 +73,8 @@ func (t *GoHTMLTemplate) EmbedTemplates() {
 	t.AddInternalTemplate("_default", "sitemap.xml", `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   {{ range .Data.Pages }}
   <url>
-    <loc>{{ .Permalink }}</loc>{{ if not .Date.IsZero }}
-    <lastmod>{{ safeHTML ( .Date.Format "2006-01-02T15:04:05-07:00" ) }}</lastmod>{{ end }}{{ with .Sitemap.ChangeFreq }}
+    <loc>{{ .Permalink }}</loc>{{ if not .Lastmod.IsZero }}
+    <lastmod>{{ safeHTML ( .Lastmod.Format "2006-01-02T15:04:05-07:00" ) }}</lastmod>{{ end }}{{ with .Sitemap.ChangeFreq }}
     <changefreq>{{ . }}</changefreq>{{ end }}{{ if ge .Sitemap.Priority 0.0 }}
     <priority>{{ .Sitemap.Priority }}</priority>{{ end }}
   </url>

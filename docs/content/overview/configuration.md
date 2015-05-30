@@ -77,8 +77,10 @@ Following is a list of Hugo-defined variables that you can configure and their c
     baseURL:                    ""
     # include content marked as draft
     buildDrafts:                false
-    # include content with datePublished in the future
+    # include content with publishdate in the future
     buildFuture:                false
+    # enable this to make all relative URLs relative to content root. Note that this does not affect absolute URLs.
+    relativeURLs: 		false
     canonifyURLs:               false
     # config file (default is path/config.yaml|json|toml)
     config:                     "config.toml"
@@ -197,6 +199,16 @@ but only these three.</small></td>
 <tr>
 <td class="purpose-title">Purpose:</td>
 <td class="purpose-description" colspan="2">Use non-default additional extensions <small>(e.g.&nbsp;Add <code>"hardLineBreak"</code> to use <code>EXTENSION_HARD_LINE_BREAK</code>)</small></td>
+</tr>
+
+<tr>
+<td><code>extensionsmask</code></td>
+<td><code>[]</code></td>
+<td><code>EXTENSION_*</code></td>
+</tr>
+<tr>
+<td class="purpose-title">Purpose:</td>
+<td class="purpose-description" colspan="2">Extensions in this option won't be loaded. <small>(e.g.&nbsp;Add <code>"autoHeaderIds"</code> to disable <code>EXTENSION_AUTO_HEADER_IDS</code>)</small></td>
 </tr>
 </tbody>
 </table>

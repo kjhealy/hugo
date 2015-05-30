@@ -15,6 +15,7 @@ package tpl
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/eknkc/amber"
 	bp "github.com/spf13/hugo/bufferpool"
 	"github.com/spf13/hugo/helpers"
@@ -156,6 +157,28 @@ func (t *GoHTMLTemplate) AddTemplate(name, tpl string) error {
 	return err
 }
 
+func (t *GoHTMLTemplate) AddAceTemplate(name, basePath, innerPath string, baseContent, innerContent []byte) error {
+	var base, inner *ace.File
+	name = name[:len(name)-len(filepath.Ext(innerPath))] + ".html"
+	if basePath != "" {
+		base = ace.NewFile(basePath, baseContent)
+		inner = ace.NewFile(innerPath, innerContent)
+	} else {
+		base = ace.NewFile(innerPath, innerContent)
+		inner = ace.NewFile("", []byte{})
+	}
+	parsed, err := ace.ParseSource(ace.NewSource(base, inner, []*ace.File{}), nil)
+	if err != nil {
+		t.errors = append(t.errors, &templateErr{name: name, err: err})
+		return err
+	}
+	_, err = ace.CompileResultWithTemplate(t.New(name), parsed, nil)
+	if err != nil {
+		t.errors = append(t.errors, &templateErr{name: name, err: err})
+	}
+	return err
+}
+
 func (t *GoHTMLTemplate) AddTemplateFile(name, baseTemplatePath, path string) error {
 	// get the suffix and switch on that
 	ext := filepath.Ext(path)
@@ -171,35 +194,21 @@ func (t *GoHTMLTemplate) AddTemplateFile(name, baseTemplatePath, path string) er
 			return err
 		}
 	case ".ace":
-		b, err := ioutil.ReadFile(path)
+		var innerContent, baseContent []byte
+		innerContent, err := ioutil.ReadFile(path)
+
 		if err != nil {
 			return err
 		}
 
-		var base, inner *ace.File
-
-		name = name[:len(name)-len(ext)] + ".html"
 		if baseTemplatePath != "" {
-			b2, err := ioutil.ReadFile(baseTemplatePath)
+			baseContent, err = ioutil.ReadFile(baseTemplatePath)
 			if err != nil {
 				return err
 			}
-			base = ace.NewFile(baseTemplatePath, b2)
-			inner = ace.NewFile(path, b)
-		} else {
-			base = ace.NewFile(path, b)
-			inner = ace.NewFile("", []byte{})
 		}
-		rslt, err := ace.ParseSource(ace.NewSource(base, inner, []*ace.File{}), nil)
-		if err != nil {
-			t.errors = append(t.errors, &templateErr{name: name, err: err})
-			return err
-		}
-		_, err = ace.CompileResultWithTemplate(t.New(name), rslt, nil)
-		if err != nil {
-			t.errors = append(t.errors, &templateErr{name: name, err: err})
-		}
-		return err
+
+		return t.AddAceTemplate(name, baseTemplatePath, path, baseContent, innerContent)
 	default:
 		b, err := ioutil.ReadFile(path)
 		if err != nil {
@@ -279,14 +288,26 @@ func (t *GoHTMLTemplate) loadTemplates(absPath string, prefix string) {
 					return err
 				}
 				if needsBase {
-					// Look for the base first in the current path, then in _default.
-					p := filepath.Join(filepath.Dir(path), baseAceFilename)
-					if ok, err := helpers.Exists(p, hugofs.OsFs); err == nil && ok {
-						baseTemplatePath = p
-					} else {
-						p := filepath.Join(absPath, "_default", baseAceFilename)
-						if ok, err := helpers.Exists(p, hugofs.OsFs); err == nil && ok {
-							baseTemplatePath = p
+
+					// Look for base template in the follwing order:
+					//   1. <current-path>/<template-name>-baseof.ace, e.g. list-baseof.ace.
+					//   2. <current-path>/baseof.ace
+					//   3. _default/<template-name>-baseof.ace, e.g. list-baseof.ace.
+					//   4. _default/baseof.ace
+
+					currBaseAceFilename := fmt.Sprintf("%s-%s", helpers.Filename(path), baseAceFilename)
+					templateDir := filepath.Dir(path)
+
+					pathsToCheck := []string{
+						filepath.Join(templateDir, currBaseAceFilename),
+						filepath.Join(templateDir, baseAceFilename),
+						filepath.Join(absPath, "_default", currBaseAceFilename),
+						filepath.Join(absPath, "_default", baseAceFilename)}
+
+					for _, pathToCheck := range pathsToCheck {
+						if ok, err := helpers.Exists(pathToCheck, hugofs.OsFs); err == nil && ok {
+							baseTemplatePath = pathToCheck
+							break
 						}
 					}
 				}
