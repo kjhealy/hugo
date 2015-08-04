@@ -170,20 +170,45 @@ func Slicestr(a interface{}, startEnd ...int) (string, error) {
 // In addition, borrowing from the extended behavior described at http://php.net/substr,
 // if length is given and is negative, then that many characters will be omitted from
 // the end of string.
-func Substr(a interface{}, nums ...int) (string, error) {
+func Substr(a interface{}, nums ...interface{}) (string, error) {
 	aStr, err := cast.ToStringE(a)
 	if err != nil {
 		return "", err
 	}
 
 	var start, length int
+	toInt := func(v interface{}, message string) (int, error) {
+		switch i := v.(type) {
+		case int:
+			return i, nil
+		case int8:
+			return int(i), nil
+		case int16:
+			return int(i), nil
+		case int32:
+			return int(i), nil
+		case int64:
+			return int(i), nil
+		default:
+			return 0, errors.New(message)
+		}
+	}
+
 	switch len(nums) {
+	case 0:
+		return "", errors.New("too less arguments")
 	case 1:
-		start = nums[0]
+		if start, err = toInt(nums[0], "start argument must be integer"); err != nil {
+			return "", err
+		}
 		length = len(aStr)
 	case 2:
-		start = nums[0]
-		length = nums[1]
+		if start, err = toInt(nums[0], "start argument must be integer"); err != nil {
+			return "", err
+		}
+		if length, err = toInt(nums[1], "length argument must be integer"); err != nil {
+			return "", err
+		}
 	default:
 		return "", errors.New("too many arguments")
 	}
@@ -363,6 +388,78 @@ func First(limit interface{}, seq interface{}) (interface{}, error) {
 	return seqv.Slice(0, limitv).Interface(), nil
 }
 
+// Last is exposed to templates, to iterate over the last N items in a
+// rangeable list.
+func Last(limit interface{}, seq interface{}) (interface{}, error) {
+
+	if limit == nil || seq == nil {
+		return nil, errors.New("both limit and seq must be provided")
+	}
+
+	limitv, err := cast.ToIntE(limit)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if limitv < 1 {
+		return nil, errors.New("can't return negative/empty count of items from sequence")
+	}
+
+	seqv := reflect.ValueOf(seq)
+	seqv, isNil := indirect(seqv)
+	if isNil {
+		return nil, errors.New("can't iterate over a nil value")
+	}
+
+	switch seqv.Kind() {
+	case reflect.Array, reflect.Slice, reflect.String:
+		// okay
+	default:
+		return nil, errors.New("can't iterate over " + reflect.ValueOf(seq).Type().String())
+	}
+	if limitv > seqv.Len() {
+		limitv = seqv.Len()
+	}
+	return seqv.Slice(seqv.Len()-limitv, seqv.Len()).Interface(), nil
+}
+
+// After is exposed to templates, to iterate over all the items after N in a
+// rangeable list. It's meant to accompany First
+func After(index interface{}, seq interface{}) (interface{}, error) {
+
+	if index == nil || seq == nil {
+		return nil, errors.New("both limit and seq must be provided")
+	}
+
+	indexv, err := cast.ToIntE(index)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if indexv < 1 {
+		return nil, errors.New("can't return negative/empty count of items from sequence")
+	}
+
+	seqv := reflect.ValueOf(seq)
+	seqv, isNil := indirect(seqv)
+	if isNil {
+		return nil, errors.New("can't iterate over a nil value")
+	}
+
+	switch seqv.Kind() {
+	case reflect.Array, reflect.Slice, reflect.String:
+		// okay
+	default:
+		return nil, errors.New("can't iterate over " + reflect.ValueOf(seq).Type().String())
+	}
+	if indexv >= seqv.Len() {
+		return nil, errors.New("no items left")
+	}
+	return seqv.Slice(indexv, seqv.Len()).Interface(), nil
+}
+
 var (
 	zero      reflect.Value
 	errorType = reflect.TypeOf((*error)(nil)).Elem()
@@ -439,17 +536,21 @@ func evaluateSubElem(obj reflect.Value, elemName string) (reflect.Value, error) 
 }
 
 func checkCondition(v, mv reflect.Value, op string) (bool, error) {
-	if !v.IsValid() || !mv.IsValid() {
-		return false, nil
+	v, vIsNil := indirect(v)
+	if !v.IsValid() {
+		vIsNil = true
 	}
-
-	var isNil bool
-	v, isNil = indirect(v)
-	if isNil {
-		return false, nil
+	mv, mvIsNil := indirect(mv)
+	if !mv.IsValid() {
+		mvIsNil = true
 	}
-	mv, isNil = indirect(mv)
-	if isNil {
+	if vIsNil || mvIsNil {
+		switch op {
+		case "", "=", "==", "eq":
+			return vIsNil == mvIsNil, nil
+		case "!=", "<>", "ne":
+			return vIsNil != mvIsNil, nil
+		}
 		return false, nil
 	}
 
@@ -1227,6 +1328,8 @@ func init() {
 		"relURL":      func(a string) template.HTML { return template.HTML(helpers.RelURL(a)) },
 		"markdownify": Markdownify,
 		"first":       First,
+		"last":        Last,
+		"after":       After,
 		"where":       Where,
 		"delimit":     Delimit,
 		"sort":        Sort,
@@ -1250,34 +1353,9 @@ func init() {
 		"dateFormat":  DateFormat,
 		"getJSON":     GetJSON,
 		"getCSV":      GetCSV,
+		"ReadDir":     ReadDir,
 		"seq":         helpers.Seq,
 		"getenv":      func(varName string) string { return os.Getenv(varName) },
-
-		// "getJson" is deprecated. Will be removed in 0.15.
-		"getJson": func(urlParts ...string) interface{} {
-			helpers.Deprecated("Template", "getJson", "getJSON")
-			return GetJSON(urlParts...)
-		},
-		// "getJson" is deprecated. Will be removed in 0.15.
-		"getCsv": func(sep string, urlParts ...string) [][]string {
-			helpers.Deprecated("Template", "getCsv", "getCSV")
-			return GetCSV(sep, urlParts...)
-		},
-		// "safeHtml" is deprecated. Will be removed in 0.15.
-		"safeHtml": func(text string) template.HTML {
-			helpers.Deprecated("Template", "safeHtml", "safeHTML")
-			return SafeHTML(text)
-		},
-		// "safeCss" is deprecated. Will be removed in 0.15.
-		"safeCss": func(text string) template.CSS {
-			helpers.Deprecated("Template", "safeCss", "safeCSS")
-			return SafeCSS(text)
-		},
-		// "safeUrl" is deprecated. Will be removed in 0.15.
-		"safeUrl": func(text string) template.URL {
-			helpers.Deprecated("Template", "safeUrl", "safeURL")
-			return SafeURL(text)
-		},
 	}
 
 }

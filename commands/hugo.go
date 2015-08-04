@@ -43,11 +43,12 @@ import (
 var HugoCmd = &cobra.Command{
 	Use:   "hugo",
 	Short: "hugo builds your site",
-	Long: `hugo is the main command, used to build your Hugo site. 
-	
-Hugo is a Fast and Flexible Static Site Generator built with love by spf13 and friends in Go.
+	Long: `hugo is the main command, used to build your Hugo site.
 
-Complete documentation is available at http://gohugo.io`,
+Hugo is a Fast and Flexible Static Site Generator
+built with love by spf13 and friends in Go.
+
+Complete documentation is available at http://gohugo.io/.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		InitializeConfig()
 		build()
@@ -57,7 +58,7 @@ Complete documentation is available at http://gohugo.io`,
 var hugoCmdV *cobra.Command
 
 //Flags that are to be added to commands.
-var BuildWatch, IgnoreCache, Draft, Future, UglyURLs, Verbose, Logging, VerboseLog, DisableRSS, DisableSitemap, PluralizeListTitles, NoTimes bool
+var BuildWatch, IgnoreCache, Draft, Future, UglyURLs, Verbose, Logging, VerboseLog, DisableRSS, DisableSitemap, PluralizeListTitles, PreserveTaxonomyNames, NoTimes bool
 var Source, CacheDir, Destination, Theme, BaseURL, CfgFile, LogFile, Editor string
 
 //Execute adds all child commands to the root command HugoCmd and sets flags appropriately.
@@ -102,6 +103,8 @@ func init() {
 	HugoCmd.PersistentFlags().BoolVar(&VerboseLog, "verboseLog", false, "verbose logging")
 	HugoCmd.PersistentFlags().BoolVar(&nitro.AnalysisOn, "stepAnalysis", false, "display memory and timing of different steps of the program")
 	HugoCmd.PersistentFlags().BoolVar(&PluralizeListTitles, "pluralizeListTitles", true, "Pluralize titles in lists using inflect")
+	HugoCmd.PersistentFlags().BoolVar(&PreserveTaxonomyNames, "preserveTaxonomyNames", false, `Preserve taxonomy names as written ("Gérard Depardieu" vs "gerard-depardieu")`)
+
 	HugoCmd.Flags().BoolVarP(&BuildWatch, "watch", "w", false, "watch filesystem for changes and recreate as needed")
 	HugoCmd.Flags().BoolVarP(&NoTimes, "noTimes", "", false, "Don't sync modification time of files")
 	hugoCmdV = HugoCmd
@@ -139,14 +142,17 @@ func LoadDefaultSettings() {
 	viper.SetDefault("IgnoreCache", false)
 	viper.SetDefault("CanonifyURLs", false)
 	viper.SetDefault("RelativeURLs", false)
+	viper.SetDefault("RemovePathAccents", false)
 	viper.SetDefault("Taxonomies", map[string]string{"tag": "tags", "category": "categories"})
 	viper.SetDefault("Permalinks", make(hugolib.PermalinkOverrides, 0))
 	viper.SetDefault("Sitemap", hugolib.Sitemap{Priority: -1})
 	viper.SetDefault("PygmentsStyle", "monokai")
 	viper.SetDefault("DefaultExtension", "html")
 	viper.SetDefault("PygmentsUseClasses", false)
+	viper.SetDefault("PygmentsCodeFences", false)
 	viper.SetDefault("DisableLiveReload", false)
 	viper.SetDefault("PluralizeListTitles", true)
+	viper.SetDefault("PreserveTaxonomyNames", false)
 	viper.SetDefault("FootnoteAnchorPrefix", "")
 	viper.SetDefault("FootnoteReturnLinkContents", "")
 	viper.SetDefault("NewContentEditor", "")
@@ -196,6 +202,10 @@ func InitializeConfig() {
 
 	if hugoCmdV.PersistentFlags().Lookup("pluralizeListTitles").Changed {
 		viper.Set("PluralizeListTitles", PluralizeListTitles)
+	}
+
+	if hugoCmdV.PersistentFlags().Lookup("preserveTaxonomyNames").Changed {
+		viper.Set("PreserveTaxonomyNames", PreserveTaxonomyNames)
 	}
 
 	if hugoCmdV.PersistentFlags().Lookup("editor").Changed {
@@ -269,7 +279,15 @@ func InitializeConfig() {
 
 	jww.INFO.Println("Using config file:", viper.ConfigFileUsed())
 
+	themeDir := helpers.GetThemeDir()
+	if themeDir != "" {
+		if _, err := os.Stat(themeDir); os.IsNotExist(err) {
+			jww.FATAL.Fatalln("Unable to find theme Directory:", themeDir)
+		}
+	}
+
 	themeVersionMismatch, minVersion := helpers.IsThemeVsHugoVersionMismatch()
+
 	if themeVersionMismatch {
 		jww.ERROR.Printf("Current theme does not support Hugo version %s. Minimum version required is %s\n",
 			helpers.HugoReleaseVersion(), minVersion)
@@ -326,10 +344,16 @@ func copyStatic() error {
 func getDirList() []string {
 	var a []string
 	dataDir := helpers.AbsPathify(viper.GetString("DataDir"))
+	layoutDir := helpers.AbsPathify(viper.GetString("LayoutDir"))
 	walker := func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			if path == dataDir && os.IsNotExist(err) {
 				jww.WARN.Println("Skip DataDir:", err)
+				return nil
+
+			}
+			if path == layoutDir && os.IsNotExist(err) {
+				jww.WARN.Println("Skip LayoutDir:", err)
 				return nil
 
 			}
@@ -436,7 +460,7 @@ func NewWatcher(port int) error {
 						continue
 					}
 
-					isstatic := strings.HasPrefix(ev.Name, helpers.GetStaticDirPath()) || strings.HasPrefix(ev.Name, helpers.GetThemesDirPath())
+					isstatic := strings.HasPrefix(ev.Name, helpers.GetStaticDirPath()) || (len(helpers.GetThemesDirPath()) > 0 && strings.HasPrefix(ev.Name, helpers.GetThemesDirPath()))
 					staticChanged = staticChanged || isstatic
 					dynamicChanged = dynamicChanged || !isstatic
 

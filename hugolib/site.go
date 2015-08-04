@@ -93,27 +93,28 @@ type targetList struct {
 }
 
 type SiteInfo struct {
-	BaseURL             template.URL
-	Taxonomies          TaxonomyList
-	Authors             AuthorList
-	Social              SiteSocial
-	Sections            Taxonomy
-	Pages               *Pages
-	Files               []*source.File
-	Menus               *Menus
-	Hugo                *HugoInfo
-	Title               string
-	Author              map[string]interface{}
-	LanguageCode        string
-	DisqusShortname     string
-	Copyright           string
-	LastChange          time.Time
-	Permalinks          PermalinkOverrides
-	Params              map[string]interface{}
-	BuildDrafts         bool
-	canonifyURLs        bool
-	paginationPageCount uint64
-	Data                *map[string]interface{}
+	BaseURL               template.URL
+	Taxonomies            TaxonomyList
+	Authors               AuthorList
+	Social                SiteSocial
+	Sections              Taxonomy
+	Pages                 *Pages
+	Files                 []*source.File
+	Menus                 *Menus
+	Hugo                  *HugoInfo
+	Title                 string
+	Author                map[string]interface{}
+	LanguageCode          string
+	DisqusShortname       string
+	Copyright             string
+	LastChange            time.Time
+	Permalinks            PermalinkOverrides
+	Params                map[string]interface{}
+	BuildDrafts           bool
+	canonifyURLs          bool
+	preserveTaxonomyNames bool
+	paginationPageCount   uint64
+	Data                  *map[string]interface{}
 }
 
 // SiteSocial is a place to put social details on a site level. These are the
@@ -130,24 +131,6 @@ type SiteInfo struct {
 // youtube
 // linkedin
 type SiteSocial map[string]string
-
-// BaseUrl is deprecated. Will be removed in 0.15.
-func (s *SiteInfo) BaseUrl() template.URL {
-	helpers.Deprecated("Site", ".BaseUrl", ".BaseURL")
-	return s.BaseURL
-}
-
-// Recent is deprecated. Will be removed in 0.15.
-func (s *SiteInfo) Recent() *Pages {
-	helpers.Deprecated("Site", ".Recent", ".Pages")
-	return s.Pages
-}
-
-// Indexes is deprecated. Will be removed in 0.15.
-func (s *SiteInfo) Indexes() *TaxonomyList {
-	helpers.Deprecated("Site", ".Indexes", ".Taxonomies")
-	return &s.Taxonomies
-}
 
 func (s *SiteInfo) GetParam(key string) interface{} {
 	v := s.Params[strings.ToLower(key)]
@@ -465,19 +448,21 @@ func (s *Site) initializeSiteInfo() {
 	}
 
 	s.Info = SiteInfo{
-		BaseURL:         template.URL(helpers.SanitizeURLKeepTrailingSlash(viper.GetString("BaseURL"))),
-		Title:           viper.GetString("Title"),
-		Author:          viper.GetStringMap("author"),
-		LanguageCode:    viper.GetString("languagecode"),
-		Copyright:       viper.GetString("copyright"),
-		DisqusShortname: viper.GetString("DisqusShortname"),
-		BuildDrafts:     viper.GetBool("BuildDrafts"),
-		canonifyURLs:    viper.GetBool("CanonifyURLs"),
-		Pages:           &s.Pages,
-		Menus:           &s.Menus,
-		Params:          params,
-		Permalinks:      permalinks,
-		Data:            &s.Data,
+		BaseURL:               template.URL(helpers.SanitizeURLKeepTrailingSlash(viper.GetString("BaseURL"))),
+		Title:                 viper.GetString("Title"),
+		Author:                viper.GetStringMap("author"),
+		Social:                viper.GetStringMapString("social"),
+		LanguageCode:          viper.GetString("languagecode"),
+		Copyright:             viper.GetString("copyright"),
+		DisqusShortname:       viper.GetString("DisqusShortname"),
+		BuildDrafts:           viper.GetBool("BuildDrafts"),
+		canonifyURLs:          viper.GetBool("CanonifyURLs"),
+		preserveTaxonomyNames: viper.GetBool("PreserveTaxonomyNames"),
+		Pages:      &s.Pages,
+		Menus:      &s.Menus,
+		Params:     params,
+		Permalinks: permalinks,
+		Data:       &s.Data,
 	}
 }
 
@@ -833,21 +818,20 @@ func (s *Site) assembleTaxonomies() {
 	for _, plural := range taxonomies {
 		s.Taxonomies[plural] = make(Taxonomy)
 		for _, p := range s.Pages {
-			vals := p.GetParam(plural)
+			vals := p.getParam(plural, !s.Info.preserveTaxonomyNames)
 			weight := p.GetParam(plural + "_weight")
 			if weight == nil {
 				weight = 0
 			}
-
 			if vals != nil {
 				if v, ok := vals.([]string); ok {
 					for _, idx := range v {
 						x := WeightedPage{weight.(int), p}
-						s.Taxonomies[plural].Add(idx, x)
+						s.Taxonomies[plural].Add(idx, x, s.Info.preserveTaxonomyNames)
 					}
 				} else if v, ok := vals.(string); ok {
 					x := WeightedPage{weight.(int), p}
-					s.Taxonomies[plural].Add(v, x)
+					s.Taxonomies[plural].Add(v, x, s.Info.preserveTaxonomyNames)
 				} else {
 					jww.ERROR.Printf("Invalid %s in %s\n", plural, p.File.Path())
 				}
@@ -864,7 +848,7 @@ func (s *Site) assembleTaxonomies() {
 
 func (s *Site) assembleSections() {
 	for i, p := range s.Pages {
-		s.Sections.Add(p.Section(), WeightedPage{s.Pages[i].Weight, s.Pages[i]})
+		s.Sections.Add(p.Section(), WeightedPage{s.Pages[i].Weight, s.Pages[i]}, s.Info.preserveTaxonomyNames)
 	}
 
 	for k := range s.Sections {
@@ -1058,9 +1042,16 @@ func (s *Site) RenderTaxonomiesLists() error {
 }
 
 func (s *Site) newTaxonomyNode(t taxRenderInfo) (*Node, string) {
-	base := t.plural + "/" + t.key
+	key := t.key
 	n := s.NewNode()
-	n.Title = strings.Replace(strings.Title(t.key), "-", " ", -1)
+	if s.Info.preserveTaxonomyNames {
+		key = helpers.MakePathToLower(key)
+		// keep as is, just make sure the first char is upper
+		n.Title = helpers.FirstUpper(t.key)
+	} else {
+		n.Title = strings.Replace(strings.Title(t.key), "-", " ", -1)
+	}
+	base := t.plural + "/" + key
 	s.setURLs(n, base)
 	if len(t.pages) > 0 {
 		n.Date = t.pages[0].Page.Date
@@ -1086,7 +1077,14 @@ func taxonomyRenderer(s *Site, taxes <-chan taxRenderInfo, results chan<- error,
 
 		n, base = s.newTaxonomyNode(t)
 
-		if err := s.renderAndWritePage("taxononomy "+t.singular, base, n, layouts...); err != nil {
+		dest := base
+		if viper.GetBool("UglyURLs") {
+			dest = helpers.Uglify(base + ".html")
+		} else {
+			dest = helpers.PrettifyPath(base + "/index.html")
+		}
+
+		if err := s.renderAndWritePage("taxonomy "+t.singular, dest, n, layouts...); err != nil {
 			results <- err
 			continue
 		}
@@ -1109,12 +1107,13 @@ func taxonomyRenderer(s *Site, taxes <-chan taxRenderInfo, results chan<- error,
 				taxonomyPagerNode, _ := s.newTaxonomyNode(t)
 				taxonomyPagerNode.paginator = pager
 				if pager.TotalPages() > 0 {
-					taxonomyPagerNode.Date = pager.Pages()[0].Date
-					taxonomyPagerNode.Lastmod = pager.Pages()[0].Lastmod
+					first, _ := pager.page(0)
+					taxonomyPagerNode.Date = first.Date
+					taxonomyPagerNode.Lastmod = first.Lastmod
 				}
 				pageNumber := i + 1
 				htmlBase := fmt.Sprintf("/%s/%s/%d", base, paginatePath, pageNumber)
-				if err := s.renderAndWritePage(fmt.Sprintf("taxononomy %s", t.singular), htmlBase, taxonomyPagerNode, layouts...); err != nil {
+				if err := s.renderAndWritePage(fmt.Sprintf("taxonomy %s", t.singular), htmlBase, taxonomyPagerNode, layouts...); err != nil {
 					results <- err
 					continue
 				}
@@ -1123,11 +1122,11 @@ func taxonomyRenderer(s *Site, taxes <-chan taxRenderInfo, results chan<- error,
 
 		if !viper.GetBool("DisableRSS") {
 			// XML Feed
-			n.URL = s.permalinkStr(base + "/index.xml")
+			n.URL = s.permalinkStr(base + "/" + viper.GetString("RSSUri"))
 			n.Permalink = s.permalink(base)
 			rssLayouts := []string{"taxonomy/" + t.singular + ".rss.xml", "_default/rss.xml", "rss.xml", "_internal/_default/rss.xml"}
 
-			if err := s.renderAndWriteXML("taxonomy "+t.singular+" rss", base+"/index.xml", n, s.appendThemeTemplates(rssLayouts)...); err != nil {
+			if err := s.renderAndWriteXML("taxonomy "+t.singular+" rss", base+"/"+viper.GetString("RSSUri"), n, s.appendThemeTemplates(rssLayouts)...); err != nil {
 				results <- err
 				continue
 			}
@@ -1179,15 +1178,18 @@ func (s *Site) newSectionListNode(sectionName, section string, data WeightedPage
 // RenderSectionLists renders a page for each section
 func (s *Site) RenderSectionLists() error {
 	for section, data := range s.Sections {
-
-		// section keys are lower case
+		// section keys can be lower case (depending on site.pathifyTaxonomyKeys)
 		// extract the original casing from the first page to get sensible titles.
 		sectionName := section
-		if len(data) > 0 {
+		if !s.Info.preserveTaxonomyNames && len(data) > 0 {
 			sectionName = data[0].Page.Section()
 		}
 		layouts := s.appendThemeTemplates(
 			[]string{"section/" + section + ".html", "_default/section.html", "_default/list.html", "indexes/" + section + ".html", "_default/indexes.html"})
+
+		if s.Info.preserveTaxonomyNames {
+			section = helpers.MakePathToLower(section)
+		}
 
 		n := s.newSectionListNode(sectionName, section, data)
 		if err := s.renderAndWritePage(fmt.Sprintf("section %s", section), section, n, s.appendThemeTemplates(layouts)...); err != nil {
@@ -1212,8 +1214,9 @@ func (s *Site) RenderSectionLists() error {
 				sectionPagerNode := s.newSectionListNode(sectionName, section, data)
 				sectionPagerNode.paginator = pager
 				if pager.TotalPages() > 0 {
-					sectionPagerNode.Date = pager.Pages()[0].Date
-					sectionPagerNode.Lastmod = pager.Pages()[0].Lastmod
+					first, _ := pager.page(0)
+					sectionPagerNode.Date = first.Date
+					sectionPagerNode.Lastmod = first.Lastmod
 				}
 				pageNumber := i + 1
 				htmlBase := fmt.Sprintf("/%s/%s/%d", section, paginatePath, pageNumber)
@@ -1225,10 +1228,10 @@ func (s *Site) RenderSectionLists() error {
 
 		if !viper.GetBool("DisableRSS") && section != "" {
 			// XML Feed
-			n.URL = s.permalinkStr(section + "/index.xml")
+			n.URL = s.permalinkStr(section + "/" + viper.GetString("RSSUri"))
 			n.Permalink = s.permalink(section)
 			rssLayouts := []string{"section/" + section + ".rss.xml", "_default/rss.xml", "rss.xml", "_internal/_default/rss.xml"}
-			if err := s.renderAndWriteXML("section "+section+" rss", section+"/index.xml", n, s.appendThemeTemplates(rssLayouts)...); err != nil {
+			if err := s.renderAndWriteXML("section "+section+" rss", section+"/"+viper.GetString("RSSUri"), n, s.appendThemeTemplates(rssLayouts)...); err != nil {
 				return err
 			}
 		}
@@ -1271,8 +1274,9 @@ func (s *Site) RenderHomePage() error {
 			homePagerNode := s.newHomeNode()
 			homePagerNode.paginator = pager
 			if pager.TotalPages() > 0 {
-				homePagerNode.Date = pager.Pages()[0].Date
-				homePagerNode.Lastmod = pager.Pages()[0].Lastmod
+				first, _ := pager.page(0)
+				homePagerNode.Date = first.Date
+				homePagerNode.Lastmod = first.Lastmod
 			}
 			pageNumber := i + 1
 			htmlBase := fmt.Sprintf("/%s/%d", paginatePath, pageNumber)
@@ -1303,7 +1307,9 @@ func (s *Site) RenderHomePage() error {
 		}
 	}
 
+	// TODO(bep) reusing the Home Node smells trouble
 	n.URL = helpers.URLize("404.html")
+	n.IsHome = false
 	n.Title = "404 Page not found"
 	n.Permalink = s.permalink("404.html")
 

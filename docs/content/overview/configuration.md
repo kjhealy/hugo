@@ -139,6 +139,15 @@ Following is a list of Hugo-defined variables that you can configure and their c
     watch:                      false
     ---
 
+## Ignore files on build
+
+The following inside `config.toml` will ignore files ending with `.foo` and `.boo` when building with `hugo`.
+
+```
+ignoreFiles = [ "\\.foo$", "\\.boo$" ]
+```
+
+The above is is a list of Reqular Expressions, but note the escaping of the `\` to make TOML happy.
 
 
 
@@ -179,6 +188,26 @@ But Hugo does expose some options---as listed in the table below, matched with t
 Blackfriday would still convert 1/2, 1/4 and 3/4 to ½&nbsp;(<code>&amp;frac12;</code>),
 ¼&nbsp;(<code>&amp;frac14;</code>) and ¾&nbsp;(<code>&amp;frac34;</code>) respectively,
 but only these three.</small></td>
+</tr>
+
+<tr>
+<td><code>hrefTargetBlank</code></td>
+<td><code>false</code></td>
+<td><code>HTML_HREF_TARGET_BLANK</code></td>
+</tr>
+<tr>
+<td class="purpose-title">Purpose:</td>
+<td class="purpose-description" colspan="2">Open external links in a new window/tab.</small></td>
+</tr>
+
+<tr>
+<td><code>latexDashes</code></td>
+<td><code>true</code></td>
+<td><code>HTML_SMARTYPANTS_LATEX_DASHES</code></td>
+</tr>
+<tr>
+<td class="purpose-title">Purpose:</td>
+<td class="purpose-description" colspan="2">Disable LaTeX style dashes.</small></td>
 </tr>
 
 <tr>

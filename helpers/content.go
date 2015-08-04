@@ -40,19 +40,23 @@ var SummaryDivider = []byte("<!--more-->")
 
 // Blackfriday holds configuration values for Blackfriday rendering.
 type Blackfriday struct {
-	AngledQuotes   bool
-	Fractions      bool
-	PlainIDAnchors bool
-	Extensions     []string
-	ExtensionsMask []string
+	AngledQuotes    bool
+	Fractions       bool
+	HrefTargetBlank bool
+	LatexDashes     bool
+	PlainIDAnchors  bool
+	Extensions      []string
+	ExtensionsMask  []string
 }
 
 // NewBlackfriday creates a new Blackfriday with some sane defaults.
 func NewBlackfriday() *Blackfriday {
 	return &Blackfriday{
-		AngledQuotes:   false,
-		Fractions:      true,
-		PlainIDAnchors: false,
+		AngledQuotes:    false,
+		Fractions:       true,
+		HrefTargetBlank: false,
+		LatexDashes:     true,
+		PlainIDAnchors:  false,
 	}
 }
 
@@ -71,6 +75,7 @@ var blackfridayExtensionMap = map[string]int{
 	"headerIds":              blackfriday.EXTENSION_HEADER_IDS,
 	"titleblock":             blackfriday.EXTENSION_TITLEBLOCK,
 	"autoHeaderIds":          blackfriday.EXTENSION_AUTO_HEADER_IDS,
+	"definitionLists":        blackfriday.EXTENSION_DEFINITION_LISTS,
 }
 
 var stripHTMLReplacer = strings.NewReplacer("\n", " ", "</p>", "\n", "<br>", "\n", "<br />", "\n")
@@ -144,7 +149,6 @@ func GetHTMLRenderer(defaultFlags int, ctx *RenderingContext) blackfriday.Render
 	htmlFlags := defaultFlags
 	htmlFlags |= blackfriday.HTML_USE_XHTML
 	htmlFlags |= blackfriday.HTML_USE_SMARTYPANTS
-	htmlFlags |= blackfriday.HTML_SMARTYPANTS_LATEX_DASHES
 	htmlFlags |= blackfriday.HTML_FOOTNOTE_RETURN_LINKS
 
 	if ctx.getConfig().AngledQuotes {
@@ -155,15 +159,27 @@ func GetHTMLRenderer(defaultFlags int, ctx *RenderingContext) blackfriday.Render
 		htmlFlags |= blackfriday.HTML_SMARTYPANTS_FRACTIONS
 	}
 
-	return blackfriday.HtmlRendererWithParameters(htmlFlags, "", "", renderParameters)
+	if ctx.getConfig().HrefTargetBlank {
+		htmlFlags |= blackfriday.HTML_HREF_TARGET_BLANK
+	}
+
+	if ctx.getConfig().LatexDashes {
+		htmlFlags |= blackfriday.HTML_SMARTYPANTS_LATEX_DASHES
+	}
+
+	return &HugoHtmlRenderer{
+		blackfriday.HtmlRendererWithParameters(htmlFlags, "", "", renderParameters),
+	}
 }
+
 
 func getMarkdownExtensions(ctx *RenderingContext) int {
 	flags := 0 | blackfriday.EXTENSION_NO_INTRA_EMPHASIS |
 		blackfriday.EXTENSION_TABLES | blackfriday.EXTENSION_FENCED_CODE |
 		blackfriday.EXTENSION_AUTOLINK | blackfriday.EXTENSION_STRIKETHROUGH |
 		blackfriday.EXTENSION_SPACE_HEADERS | blackfriday.EXTENSION_FOOTNOTES |
-		blackfriday.EXTENSION_HEADER_IDS | blackfriday.EXTENSION_AUTO_HEADER_IDS
+		blackfriday.EXTENSION_HEADER_IDS | blackfriday.EXTENSION_AUTO_HEADER_IDS |
+		blackfriday.EXTENSION_DEFINITION_LISTS
 	for _, extension := range ctx.getConfig().Extensions {
 		if flag, ok := blackfridayExtensionMap[extension]; ok {
 			flags |= flag
@@ -398,7 +414,7 @@ func GetAsciidocContent(content []byte) string {
 	}
 
 	jww.INFO.Println("Rendering with", path, "...")
-	cmd := exec.Command(path, "--safe", "-")
+	cmd := exec.Command(path, "--no-header-footer", "--safe", "-")
 	cmd.Stdin = bytes.NewReader(cleanContent)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -406,13 +422,7 @@ func GetAsciidocContent(content []byte) string {
 		jww.ERROR.Println(err)
 	}
 
-	asciidocLines := strings.Split(out.String(), "\n")
-	for i, line := range asciidocLines {
-		if strings.HasPrefix(line, "<body") {
-			asciidocLines = (asciidocLines[i+1 : len(asciidocLines)-3])
-		}
-	}
-	return strings.Join(asciidocLines, "\n")
+	return out.String()
 }
 
 // GetRstContent calls the Python script rst2html as an external helper

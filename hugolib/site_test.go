@@ -320,8 +320,13 @@ func doTestCrossrefs(t *testing.T, relative, uglyUrls bool) {
 	sources := []source.ByteSource{
 		{filepath.FromSlash("sect/doc1.md"),
 			[]byte(fmt.Sprintf(`Ref 2: {{< %s "sect/doc2.md" >}}`, refShortcode))},
+		// Issue #1148: Make sure that no P-tags is added around shortcodes.
 		{filepath.FromSlash("sect/doc2.md"),
-			[]byte(fmt.Sprintf(`Ref 1: {{< %s "sect/doc1.md" >}}`, refShortcode))},
+			[]byte(fmt.Sprintf(`**Ref 1:** 
+			
+{{< %s "sect/doc1.md" >}}
+			
+THE END.`, refShortcode))},
 	}
 
 	s := &Site{
@@ -341,7 +346,7 @@ func doTestCrossrefs(t *testing.T, relative, uglyUrls bool) {
 		expected string
 	}{
 		{filepath.FromSlash(fmt.Sprintf("sect/doc1%s", expectedPathSuffix)), fmt.Sprintf("<p>Ref 2: %s/sect/doc2%s</p>\n", expectedBase, expectedUrlSuffix)},
-		{filepath.FromSlash(fmt.Sprintf("sect/doc2%s", expectedPathSuffix)), fmt.Sprintf("<p>Ref 1: %s/sect/doc1%s</p>\n", expectedBase, expectedUrlSuffix)},
+		{filepath.FromSlash(fmt.Sprintf("sect/doc2%s", expectedPathSuffix)), fmt.Sprintf("<p><strong>Ref 1:</strong></p>\n\n%s/sect/doc1%s\n\n<p>THE END.</p>\n", expectedBase, expectedUrlSuffix)},
 	}
 
 	for _, test := range tests {
@@ -393,9 +398,9 @@ func doTest404ShouldAlwaysHaveUglyUrls(t *testing.T, uglyURLs bool) {
 	s.initializeSiteInfo()
 	templatePrep(s)
 
-	must(s.addTemplate("index.html", "Home Sweet Home"))
-	must(s.addTemplate("_default/single.html", "{{.Content}}"))
-	must(s.addTemplate("404.html", "Page Not Found"))
+	must(s.addTemplate("index.html", "Home Sweet Home. IsHome={{ .IsHome  }}"))
+	must(s.addTemplate("_default/single.html", "{{.Content}} IsHome={{ .IsHome  }}"))
+	must(s.addTemplate("404.html", "Page Not Found. IsHome={{ .IsHome  }}"))
 
 	// make sure the XML files also end up with ugly urls
 	must(s.addTemplate("rss.xml", "<root>RSS</root>"))
@@ -416,9 +421,9 @@ func doTest404ShouldAlwaysHaveUglyUrls(t *testing.T, uglyURLs bool) {
 		doc      string
 		expected string
 	}{
-		{filepath.FromSlash("index.html"), "Home Sweet Home"},
-		{filepath.FromSlash(expectedPagePath), "\n\n<h1 id=\"title:5d74edbb89ef198cd37882b687940cda\">title</h1>\n\n<p>some <em>content</em></p>\n"},
-		{filepath.FromSlash("404.html"), "Page Not Found"},
+		{filepath.FromSlash("index.html"), "Home Sweet Home. IsHome=true"},
+		{filepath.FromSlash(expectedPagePath), "\n\n<h1 id=\"title:5d74edbb89ef198cd37882b687940cda\">title</h1>\n\n<p>some <em>content</em></p>\n IsHome=false"},
+		{filepath.FromSlash("404.html"), "Page Not Found. IsHome=false"},
 		{filepath.FromSlash("index.xml"), "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\" ?>\n<root>RSS</root>"},
 		{filepath.FromSlash("sitemap.xml"), "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\" ?>\n<root>SITEMAP</root>"},
 	}

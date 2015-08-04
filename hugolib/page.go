@@ -66,7 +66,9 @@ type Page struct {
 	contentShortCodes   map[string]string
 	plain               string // TODO should be []byte
 	plainWords          []string
+	plainRuneCount      int
 	plainInit           sync.Once
+	plainSecondaryInit  sync.Once
 	renderingConfig     *helpers.Blackfriday
 	renderingConfigInit sync.Once
 	PageMeta
@@ -108,10 +110,31 @@ func (p *Page) PlainWords() []string {
 	return p.plainWords
 }
 
+// RuneCount returns the rune count, excluding any whitespace, of the plain content.
+func (p *Page) RuneCount() int {
+	p.initPlainSecondary()
+	return p.plainRuneCount
+}
+
 func (p *Page) initPlain() {
 	p.plainInit.Do(func() {
 		p.plain = helpers.StripHTML(string(p.Content))
 		p.plainWords = strings.Fields(p.plain)
+		return
+	})
+}
+
+func (p *Page) initPlainSecondary() {
+	p.plainSecondaryInit.Do(func() {
+		p.initPlain()
+		runeCount := 0
+		for _, r := range p.plain {
+			if !helpers.IsWhitespace(r) {
+				runeCount++
+			}
+		}
+		p.plainRuneCount = runeCount
+		return
 	})
 }
 
@@ -183,7 +206,7 @@ func (p *Page) setSummary() {
 		renderedHeader := p.renderBytes(header)
 		if len(p.contentShortCodes) > 0 {
 			tmpContentWithTokensReplaced, err :=
-				replaceShortcodeTokens(renderedHeader, shortcodePlaceholderPrefix, true, p.contentShortCodes)
+				replaceShortcodeTokens(renderedHeader, shortcodePlaceholderPrefix, p.contentShortCodes)
 			if err != nil {
 				jww.FATAL.Printf("Failed to replace short code tokens in Summary for %s:\n%s", p.BaseFileName(), err.Error())
 			} else {
@@ -518,11 +541,23 @@ func (p *Page) update(f interface{}) error {
 			default: // handle array of strings as well
 				switch vvv := vv.(type) {
 				case []interface{}:
-					var a = make([]string, len(vvv))
-					for i, u := range vvv {
-						a[i] = cast.ToString(u)
+					if len(vvv) > 0 {
+						switch vvv[0].(type) {
+						case map[interface{}]interface{}: // Proper parsing structured array from YAML based FrontMatter
+							p.Params[loki] = vvv
+						case map[string]interface{}: // Proper parsing structured array from JSON based FrontMatter
+							p.Params[loki] = vvv
+						default:
+							a := make([]string, len(vvv))
+							for i, u := range vvv {
+								a[i] = cast.ToString(u)
+							}
+
+							p.Params[loki] = a
+						}
+					} else {
+						p.Params[loki] = []string{}
 					}
-					p.Params[loki] = a
 				default:
 					p.Params[loki] = vv
 				}
@@ -539,6 +574,10 @@ func (p *Page) update(f interface{}) error {
 }
 
 func (p *Page) GetParam(key string) interface{} {
+	return p.getParam(key, true)
+}
+
+func (p *Page) getParam(key string, stringToLower bool) interface{} {
 	v := p.Params[strings.ToLower(key)]
 
 	if v == nil {
@@ -549,7 +588,10 @@ func (p *Page) GetParam(key string) interface{} {
 	case bool:
 		return cast.ToBool(v)
 	case string:
-		return strings.ToLower(cast.ToString(v))
+		if stringToLower {
+			return strings.ToLower(cast.ToString(v))
+		}
+		return cast.ToString(v)
 	case int64, int32, int16, int8, int:
 		return cast.ToInt(v)
 	case float64, float32:
@@ -557,7 +599,10 @@ func (p *Page) GetParam(key string) interface{} {
 	case time.Time:
 		return cast.ToTime(v)
 	case []string:
-		return helpers.SliceToLower(v.([]string))
+		if stringToLower {
+			return helpers.SliceToLower(v.([]string))
+		}
+		return v.([]string)
 	case map[string]interface{}: // JSON and TOML
 		return v
 	case map[interface{}]interface{}: // YAML
@@ -581,6 +626,9 @@ func (p *Page) HasMenuCurrent(menu string, me *MenuEntry) bool {
 		if me.HasChildren() {
 			for _, child := range me.Children {
 				if child.IsEqual(m) {
+					return true
+				}
+				if p.HasMenuCurrent(menu, child) {
 					return true
 				}
 			}
@@ -656,13 +704,15 @@ func (p *Page) Menus() PageMenus {
 }
 
 func (p *Page) Render(layout ...string) template.HTML {
-	curLayout := ""
+	var l []string
 
 	if len(layout) > 0 {
-		curLayout = layout[0]
+		l = layouts(p.Type(), layout[0])
+	} else {
+		l = p.Layout()
 	}
 
-	return tpl.ExecuteTemplateToHTML(p, p.Layout(curLayout)...)
+	return tpl.ExecuteTemplateToHTML(p, l...)
 }
 
 func (p *Page) guessMarkupType() string {
@@ -704,6 +754,10 @@ func (p *Page) parse(reader io.Reader) error {
 	p.rawContent = psr.Content()
 
 	return nil
+}
+
+func (p *Page) RawContent() string {
+	return string(p.rawContent)
 }
 
 func (p *Page) SetSourceContent(content []byte) {
@@ -800,7 +854,7 @@ func (p *Page) Convert() error {
 }
 
 func (p *Page) FullFilePath() string {
-	return filepath.Join(p.Source.Dir(), p.Source.Path())
+	return filepath.Join(p.Dir(), p.LogicalName())
 }
 
 func (p *Page) TargetPath() (outfile string) {

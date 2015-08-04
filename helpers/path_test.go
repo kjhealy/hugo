@@ -17,6 +17,10 @@ import (
 )
 
 func TestMakePath(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+	viper.Set("RemovePathAccents", true)
+
 	tests := []struct {
 		input    string
 		expected string
@@ -27,7 +31,7 @@ func TestMakePath(t *testing.T) {
 		{"FOo/BaR.html", "FOo/BaR.html"},
 		{"трям/трям", "трям/трям"},
 		{"은행", "은행"},
-		{"Банковский кассир", "Банковский-кассир"},
+		{"Банковский кассир", "Банковскии-кассир"},
 	}
 
 	for _, test := range tests {
